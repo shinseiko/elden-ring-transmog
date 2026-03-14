@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 #include <elden-x/chr/world_chr_man.hpp>
 #include <elden-x/params.hpp>
+#include <elden-x/sound.hpp>
 #include <elden-x/task.hpp>
 #include <elden-x/utils/modutils.hpp>
 
@@ -463,14 +464,34 @@ class update_transmog_vfx_task : public er::CS::CSEzTask {
      * and vice versa
      */
     bool is_client_side_only() {
+        using clock = chrono::steady_clock;
+
         auto result = ertransmogrify::config::client_side_only;
+
+        static auto invert = false;
+        static auto last_invert_change_time = clock::now();
+        auto new_invert = false;
 
         // F8 temporarily inverts this setting so you can peek at other players' actual armor
         if (GetAsyncKeyState(VK_F8) & 0x8000) {
-            return !result;
+            new_invert = true;
         }
 
-        return result;
+        auto now = clock::now();
+
+        // In combat, throttle the client side only toggle to avoid intentional visual
+        // distractions in PVP
+        if (invert != new_invert) {
+            auto cs_sound = er::CS::CSSound::instance();
+            auto is_in_combat = cs_sound && cs_sound->flags && cs_sound->flags->is_in_combat;
+
+            if (!is_in_combat || (now - last_invert_change_time > chrono::seconds(1))) {
+                invert = new_invert;
+                last_invert_change_time = now;
+            }
+        }
+
+        return result != invert;
     }
 
 public:
